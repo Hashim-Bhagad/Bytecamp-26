@@ -1,0 +1,160 @@
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Fragment+Mono:ital@0;1&family=Instrument+Serif:ital@0;1&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --void: 216 56% 3%;
+    --base: 214 40% 5%;
+    --surface: 210 30% 9%;
+    --raised: 210 28% 12%;
+    --lifted: 212 28% 17%;
+    --border-1: 210 29% 14%;
+    --border-2: 210 28% 20%;
+    --border-3: 210 28% 27%;
+    --text-1: 210 50% 95%;
+    --text-2: 210 28% 66%;
+    --text-3: 210 28% 41%;
+    --text-4: 210 28% 27%;
+    --teal: 165 100% 45%;
+    --teal-2: 165 100% 38%;
+    --teal-dim: 165 100% 45%;
+    --teal-glow: 165 100% 45%;
+    --orange: 12 100% 56%;
+    --orange-2: 10 100% 55%;
+    --orange-dim: 12 100% 56%;
+    --orange-glow: 12 100% 56%;
+    --lang-sql: 40 90% 50%;
+    --lang-sql-dim: 40 90% 50%;
+    --lang-py: 263 93% 76%;
+    --lang-py-dim: 263 93% 76%;
+    --lang-ts: 198 91% 59%;
+    --lang-ts-dim: 198 91% 59%;
+    --lang-rx: 160 61% 52%;
+    --lang-rx-dim: 160 61% 52%;
+
+    --background: var(--void);
+    --foreground: var(--text-1);
+    --card: var(--surface);
+    --card-foreground: var(--text-1);
+    --popover: var(--surface);
+    --popover-foreground: var(--text-1);
+    --primary: var(--teal);
+    --primary-foreground: var(--void);
+    --secondary: var(--raised);
+    --secondary-foreground: var(--text-1);
+    --muted: var(--raised);
+    --muted-foreground: var(--text-3);
+    --accent: var(--lifted);
+    --accent-foreground: var(--text-1);
+    --destructive: var(--orange);
+    --destructive-foreground: var(--void);
+    --border: var(--border-1);
+    --input: var(--border-1);
+    --ring: var(--teal);
+    --radius: 0.5rem;
+
+    --sidebar-background: var(--base);
+    --sidebar-foreground: var(--text-2);
+    --sidebar-primary: var(--teal);
+    --sidebar-primary-foreground: var(--void);
+    --sidebar-accent: var(--raised);
+    --sidebar-accent-foreground: var(--text-1);
+    --sidebar-border: var(--border-1);
+    --sidebar-ring: var(--teal);
+
+    /* Raw hex for use in rgba contexts */
+    --teal-hex: #00e5b8;
+    --teal-2-hex: #00c49a;
+    --orange-hex: #ff5733;
+    --void-hex: #04070d;
+    --base-hex: #070d16;
+    --surface-hex: #0c1520;
+    --raised-hex: #111e2e;
+    --lifted-hex: #162640;
+    --border-1-hex: #162030;
+    --border-2-hex: #1e3048;
+    --border-3-hex: #2a4060;
+    --text-1-hex: #e8f0fa;
+    --text-2-hex: #8ba8c8;
+    --text-3-hex: #4a6888;
+    --text-4-hex: #2a4060;
+    --lang-sql-hex: #f59e0b;
+    --lang-py-hex: #a78bfa;
+    --lang-ts-hex: #38bdf8;
+    --lang-rx-hex: #34d399;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Syne', sans-serif;
+  }
+
+  code, .font-mono {
+    font-family: 'Fragment Mono', monospace;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-2-hex); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-3-hex); }
+
+/* Blinking cursor */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.cursor-blink {
+  animation: blink 1s infinite;
+}
+
+/* Pulse for dots */
+@keyframes pulse-dot {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.3); opacity: 0.7; }
+}
+.pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+/* Traffic light dots */
+@keyframes pulse-orange-badge {
+  0%, 100% { box-shadow: 0 0 4px rgba(255,87,51,0.15); }
+  50% { box-shadow: 0 0 12px rgba(255,87,51,0.4); }
+}
+.pulse-badge {
+  animation: pulse-orange-badge 2s ease-in-out infinite;
+}
+
+/* Critical edge flowing dashes */
+@keyframes flow-dash {
+  from { stroke-dashoffset: 30; }
+  to   { stroke-dashoffset: 0;  }
+}
+.edge-critical {
+  stroke-dasharray: 10 5;
+  animation: flow-dash 1.2s linear infinite;
+}
+
+/* Pulse glow for critical badges */
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* Graph canvas background */
+.graph-canvas {
+  background-color: #04070d;
+  background-image: radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
