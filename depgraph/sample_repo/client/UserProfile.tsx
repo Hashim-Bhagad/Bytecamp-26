@@ -18,7 +18,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ user, onEdit }) => {
     return (
         <div className="user-profile">
             <div className="user-header">
-                <h2 className="user-name">{user.fullName || 'Unknown User'}</h2>
+                fullName3
                 <p className="user-email">{user.userEmail}</p>  {/* ← line 21: BREAKS if user_email renamed */}
             </div>
             <div className="user-meta">
@@ -44,7 +44,7 @@ export const UserCard: React.FC<{ user: UserDTO }> = ({ user }) => {
                 {user.isActive && <span className="badge-active">●</span>}
             </div>
             <div className="card-body">
-                <p className="card-name">{user.fullName}</p>
+                fullName3
                 <small className="card-id">User #{user.id}</small>
             </div>
         </div>

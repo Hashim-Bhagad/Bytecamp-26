@@ -27,12 +27,12 @@ const ZONE: Record<string, { color: string; label: string }> = {
   frontend: { color: '#38bdf8', label: 'FRONTEND'  },
 };
 
-const NODE_W  = 220;
-const NODE_H  = 118;
+const NODE_W  = 200;
+const NODE_H  = 96;
 
 // Target x-center for each zone after dagre layout
-const ZONE_TARGET_X: Record<string, number> = { database: 180, backend: 680, frontend: 1200 };
-const ZONE_BAND_W   = 380;   // max spread within a zone column
+const ZONE_TARGET_X: Record<string, number> = { database: 160, backend: 620, frontend: 1100 };
+const ZONE_BAND_W   = 340;   // max spread within a zone column
 const ZONE_BG_PAD   = 28;
 
 const CHAIN_EDGE_TYPES = new Set([
@@ -82,7 +82,7 @@ function buildLayout(graphNodes: any[], graphEdges: any[]) {
   // Run dagre to get organic topology-based positions
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: 'LR', ranksep: 260, nodesep: 50, marginx: 40, marginy: 40 });
+  g.setGraph({ rankdir: 'LR', ranksep: 300, nodesep: 22, marginx: 40, marginy: 40 });
 
   nodes.forEach(n => g.setNode(n.id, { width: NODE_W, height: NODE_H }));
 
@@ -318,16 +318,16 @@ const CodeNode = ({ data, selected }: any) => {
       </div>
 
       <div style={{
-        margin: '0 8px 5px',
+        margin: '0 8px 4px',
         background: 'rgba(0,0,0,0.28)', border: '1px solid rgba(255,255,255,0.04)',
-        borderRadius: 5, padding: '4px 8px',
+        borderRadius: 5, padding: '3px 7px',
         fontSize: 9, color: '#5a8aa8',
-        whiteSpace: 'pre', overflow: 'hidden', maxHeight: 40, lineHeight: 1.6,
+        whiteSpace: 'pre', overflow: 'hidden', maxHeight: 28, lineHeight: 1.5,
       }}>
         {preview}
       </div>
 
-      <div style={{ padding: '3px 10px 7px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ padding: '2px 10px 5px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span style={{ fontSize: 9, color: `${color}80`, letterSpacing: '0.05em' }}>{label}</span>
         {isCrit ? (
           <span style={{ fontSize: 8, fontWeight: 800, color: '#ff5733',
@@ -389,7 +389,7 @@ const TrailPanel = ({ trail, nodes, edges, onClose }: {
       background: 'rgba(5,10,18,0.97)', backdropFilter: 'blur(18px)',
       border: '1px solid rgba(0,229,184,0.25)', borderRadius: 12,
       padding: '12px 20px 14px', zIndex: 100,
-      maxWidth: '90vw', overflow: 'auto',
+      maxWidth: 'calc(100% - 32px)', overflow: 'hidden',
       boxShadow: '0 4px 32px rgba(0,229,184,0.12)',
     }}>
       {/* Header */}
@@ -405,7 +405,7 @@ const TrailPanel = ({ trail, nodes, edges, onClose }: {
       </div>
 
       {/* Chain */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 0, flexWrap: 'nowrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 0, flexWrap: 'nowrap', overflowX: 'auto', overflowY: 'hidden' }}>
         {chain.map((id, idx) => {
           const n     = nodeMap.get(id);
           if (!n) return null;

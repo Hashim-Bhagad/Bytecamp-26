@@ -9,7 +9,7 @@
 export interface UserDTO {
     id: number;
     userEmail: string;       // ← camelCase of user_email (SERIALIZES_TO edge, conf: 0.92)
-    fullName: string | null; // ← camelCase of full_name
+    fullName3: string | null
     createdAt?: string;
     isActive: boolean;
 }
@@ -22,7 +22,7 @@ export interface SessionDTO {
 
 export interface UserCreateDTO {
     userEmail: string;
-    fullName?: string;
+    fullName3?: string
 }
 
 export interface ApiResponse<T> {

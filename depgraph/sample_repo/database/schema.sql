@@ -5,7 +5,7 @@
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
     user_email VARCHAR(255) UNIQUE NOT NULL,   -- ← CHAIN ROOT (Layer 1 of 5)
-    full_name VARCHAR(255),
+    full_name3 VARCHAR(255)
     created_at TIMESTAMP DEFAULT NOW(),
     is_active BOOLEAN DEFAULT TRUE
 );

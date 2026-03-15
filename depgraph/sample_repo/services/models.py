@@ -14,7 +14,7 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_email = Column(String(255), unique=True, nullable=False)  # ← MAPS_TO schema.sql::users::user_email
-    full_name = Column(String(255))
+    full_name3 = Column(String(255))
     created_at = Column(DateTime, default=func.now())
     is_active = Column(Boolean, default=True)
 

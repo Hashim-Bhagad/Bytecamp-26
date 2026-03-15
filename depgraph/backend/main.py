@@ -50,6 +50,27 @@ app.add_middleware(
 G: nx.DiGraph | None = None
 ALL_FILE_NODES: list = []
 GRAPH_PATH = str(Path(__file__).resolve().parent.parent / "depgraph_knowledge.json")
+ANALYZED_REPO_PATH: str = ""  # set during analysis; used by migrate apply/download
+
+REPO_META_PATH = str(Path(__file__).resolve().parent.parent / "depgraph_meta.json")
+
+def _save_repo_meta(repo_path: str):
+    """Persist repo path to disk so it survives server restarts."""
+    try:
+        with open(REPO_META_PATH, "w", encoding="utf-8") as f:
+            json.dump({"repo_path": repo_path}, f)
+    except Exception as e:
+        print(f"  [WARN] Could not save repo meta: {e}")
+
+def _load_repo_meta() -> str:
+    """Load persisted repo path."""
+    try:
+        if os.path.exists(REPO_META_PATH):
+            with open(REPO_META_PATH, encoding="utf-8") as f:
+                return json.load(f).get("repo_path", "")
+    except Exception:
+        pass
+    return ""
 
 # Knowledge graph enrichment state (populated after analysis)
 VARIABLE_CHAINS: list = []
@@ -100,7 +121,9 @@ async def push_progress(msg: str, pct: int, is_error: bool = False):
 # Full analysis pipeline (runs in background)
 # ────────────────────────────────────────────────────────────
 async def run_full_analysis(repo_path: str):
-    global G, ALL_FILE_NODES
+    global G, ALL_FILE_NODES, ANALYZED_REPO_PATH
+    ANALYZED_REPO_PATH = str(Path(repo_path).resolve())
+    _save_repo_meta(ANALYZED_REPO_PATH)
 
     await push_progress("Initializing AST parsers (tree-sitter)...", 5)
     await push_progress("Scanning repository and parsing source files...", 10)
@@ -260,12 +283,17 @@ async def run_full_analysis(repo_path: str):
 # ────────────────────────────────────────────────────────────
 @app.on_event("startup")
 async def startup_event():
-    global G
+    global G, ANALYZED_REPO_PATH
     init_db()
     if os.path.exists(GRAPH_PATH):
         try:
             G = load_graph(GRAPH_PATH)
             print(f"  Loaded existing graph: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
+            if not ANALYZED_REPO_PATH:
+                loaded_path = _load_repo_meta()
+                if loaded_path:
+                    ANALYZED_REPO_PATH = loaded_path
+                    print(f"  Restored repo path: {ANALYZED_REPO_PATH}")
         except Exception as e:
             print(f"  Could not load existing graph: {e}")
 
@@ -457,11 +485,125 @@ class MigrateRequest(BaseModel):
 
 
 @app.post("/api/migrate")
-async def migrate_endpoint(req: MigrateRequest):
+async def migrate_endpoint(req: MigrateRequest, username: str = Depends(verify_token)):
     """Generate complete cross-language migration plan."""
     if G is None:
         raise HTTPException(status_code=503, detail="Graph not built yet. Run /api/analyze first.")
     return await generate_migration(G, req.node_id, req.new_name)
+
+
+# ── Migration helpers ──────────────────────────────────────────────────────────
+
+def _apply_changes_to_lines(lines: list[str], changes: list[dict]) -> list[str]:
+    """Apply a list of {line, old_code, new_code} changes to a list of file lines."""
+    lines = list(lines)
+    for change in changes:
+        old_stripped = change.get("old_code", "").strip()
+        new_stripped = change.get("new_code", "").strip()
+        if not old_stripped:
+            continue
+        line_idx = change.get("line", 0) - 1  # convert to 0-based
+
+        replaced = False
+        # 1. Try hinted line number first (±2 lines tolerance)
+        for offset in range(-2, 3):
+            i = line_idx + offset
+            if 0 <= i < len(lines) and old_stripped in lines[i]:
+                indent = len(lines[i]) - len(lines[i].lstrip())
+                lines[i] = " " * indent + new_stripped
+                replaced = True
+                break
+
+        # 2. Fallback: scan entire file
+        if not replaced:
+            for i, ln in enumerate(lines):
+                if old_stripped in ln:
+                    indent = len(ln) - len(ln.lstrip())
+                    lines[i] = " " * indent + new_stripped
+                    replaced = True
+                    break
+
+    return lines
+
+
+class MigrateApplyRequest(BaseModel):
+    files: list[dict]  # same format as MigratePlan.files
+
+
+@app.post("/api/migrate/apply")
+async def migrate_apply_endpoint(req: MigrateApplyRequest, username: str = Depends(verify_token)):
+    """
+    Apply the migration plan to the actual files on disk.
+    Requires an analyzed repo path to be set.
+    """
+    if not ANALYZED_REPO_PATH or not os.path.isdir(ANALYZED_REPO_PATH):
+        raise HTTPException(status_code=400, detail="No repo path available. Run analysis first.")
+
+    # Group changes by file
+    by_file: dict[str, list[dict]] = {}
+    for ch in req.files:
+        by_file.setdefault(ch["file"], []).append(ch)
+
+    results = []
+    for rel_path, changes in by_file.items():
+        abs_path = os.path.join(ANALYZED_REPO_PATH, rel_path)
+        if not os.path.exists(abs_path):
+            results.append({"file": rel_path, "status": "error", "detail": "File not found on disk"})
+            continue
+        try:
+            with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
+                lines = f.read().split("\n")
+            lines = _apply_changes_to_lines(lines, changes)
+            with open(abs_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines))
+            results.append({"file": rel_path, "status": "ok", "changes": len(changes)})
+        except Exception as e:
+            results.append({"file": rel_path, "status": "error", "detail": str(e)})
+
+    ok = sum(1 for r in results if r["status"] == "ok")
+    failed = len(results) - ok
+    return {"applied": ok, "failed": failed, "results": results}
+
+
+@app.post("/api/migrate/download")
+async def migrate_download_endpoint(req: MigrateApplyRequest, username: str = Depends(verify_token)):
+    """
+    Build modified copies of all affected files and return them as a ZIP archive.
+    Does NOT write to disk — safe to call without side effects.
+    """
+    import zipfile
+    import io as _io
+    from fastapi.responses import StreamingResponse
+
+    if not ANALYZED_REPO_PATH or not os.path.isdir(ANALYZED_REPO_PATH):
+        raise HTTPException(status_code=400, detail="No repo path available. Run analysis first.")
+
+    by_file: dict[str, list[dict]] = {}
+    for ch in req.files:
+        by_file.setdefault(ch["file"], []).append(ch)
+
+    buf = _io.BytesIO()
+    files_added = 0
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for rel_path, changes in by_file.items():
+            abs_path = os.path.join(ANALYZED_REPO_PATH, rel_path)
+            if not os.path.exists(abs_path):
+                continue
+            with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
+                lines = f.read().split("\n")
+            lines = _apply_changes_to_lines(lines, changes)
+            zf.writestr(rel_path, "\n".join(lines))
+            files_added += 1
+
+    if files_added == 0:
+        raise HTTPException(status_code=400, detail="No matching files found in repo path.")
+
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": "attachment; filename=migration.zip"},
+    )
 
 
 @app.get("/api/git/impact")
@@ -608,6 +750,28 @@ async def get_sections():
         "total_nodes": G.number_of_nodes(),
         "total_edges": G.number_of_edges(),
     }
+
+
+@app.get("/api/repo-path")
+async def get_repo_path(username: str = Depends(verify_token)):
+    """Return the current analyzed repo path."""
+    return {"repo_path": ANALYZED_REPO_PATH, "exists": bool(ANALYZED_REPO_PATH and os.path.isdir(ANALYZED_REPO_PATH))}
+
+
+class SetRepoPathRequest(BaseModel):
+    repo_path: str
+
+
+@app.post("/api/repo-path")
+async def set_repo_path(req: SetRepoPathRequest, username: str = Depends(verify_token)):
+    """Manually override the repo path (useful after restart or for local repos)."""
+    global ANALYZED_REPO_PATH
+    path = str(Path(req.repo_path).resolve())
+    if not os.path.isdir(path):
+        raise HTTPException(status_code=400, detail=f"Path does not exist: {path}")
+    ANALYZED_REPO_PATH = path
+    _save_repo_meta(ANALYZED_REPO_PATH)
+    return {"repo_path": ANALYZED_REPO_PATH, "exists": True}
 
 
 # ────────────────────────────────────────────────────────────

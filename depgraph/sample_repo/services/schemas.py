@@ -15,7 +15,7 @@ class UserResponse(BaseModel):
     """
     id: int
     user_email: str          # ← SERIALIZES_TO types.ts::UserDTO::userEmail
-    full_name: Optional[str] = None
+    full_name3: Optional[str] = None
     created_at: Optional[datetime] = None
     is_active: bool = True
 
@@ -25,7 +25,7 @@ class UserResponse(BaseModel):
 
 class UserCreate(BaseModel):
     user_email: str
-    full_name: Optional[str] = None
+    full_name3: Optional[str] = None
 
 
 class SessionResponse(BaseModel):

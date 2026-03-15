@@ -272,6 +272,21 @@ export const apiClient = {
     return res.data;
   },
 
+  async migrateApply(files: object[]): Promise<{ applied: number; failed: number; results: Array<{ file: string; status: string; detail?: string; changes?: number }> }> {
+    const res = await api.post('/migrate/apply', { files });
+    return res.data;
+  },
+
+  async migrateDownload(files: object[]): Promise<void> {
+    const res = await api.post('/migrate/download', { files }, { responseType: 'blob' });
+    const url = URL.createObjectURL(new Blob([res.data], { type: 'application/zip' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'migration.zip';
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+
   async getChains(): Promise<ChainsResponse> {
     const res = await api.get('/chains');
     return res.data;
@@ -284,6 +299,16 @@ export const apiClient = {
 
   async getSections(): Promise<SectionsResponse> {
     const res = await api.get('/sections');
+    return res.data;
+  },
+
+  async getRepoPath(): Promise<{ repo_path: string; exists: boolean }> {
+    const res = await api.get('/repo-path');
+    return res.data;
+  },
+
+  async setRepoPath(repoPath: string): Promise<{ repo_path: string; exists: boolean }> {
+    const res = await api.post('/repo-path', { repo_path: repoPath });
     return res.data;
   },
 };

@@ -338,71 +338,238 @@ Use specific file names, line numbers, and field names. Be direct and actionable
         return f"Narration unavailable: {e}"
 
 
+# ── Naming-convention helpers ────────────────────────────────────────────────
+
+def _to_camel(name: str) -> str:
+    """user_email → userEmail"""
+    parts = name.split("_")
+    return parts[0] + "".join(p.capitalize() for p in parts[1:])
+
+
+def _to_snake(name: str) -> str:
+    """userEmail → user_email"""
+    s1 = re.sub(r'(.)([A-Z][a-z]+)', r'\1_\2', name)
+    return re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+
+
+def _target_name(new_name: str, lang: str, old_node_name: str) -> str:
+    """
+    Given the desired new_name (in whatever case the user typed),
+    return the version appropriate for the target language.
+
+    Rule: if the old node already uses camelCase (TS/React), output camelCase.
+    Otherwise (SQL/Python), output snake_case.
+    """
+    is_frontend = lang in ("typescript", "react", "javascript")
+    # Normalise new_name to snake_case first, then re-case for the target
+    snake = _to_snake(new_name)
+    if is_frontend:
+        return _to_camel(snake)
+    return snake
+
+
+def _change_type(lang: str, node_type: str) -> str:
+    t = node_type.lower()
+    if lang == "sql":
+        return "rename_column"
+    if lang == "python" and "column" in t:
+        return "update_orm"
+    if lang == "python":
+        return "update_schema"
+    if lang in ("typescript", "javascript"):
+        return "update_interface"
+    if lang == "react":
+        return "update_component"
+    return "rename"
+
+
+# ── Deterministic migration (no LLM) ────────────────────────────────────────
+
+def _build_migration_deterministic(G: nx.DiGraph, node_id: str, new_name: str) -> dict:
+    """
+    Build the migration plan entirely from graph node data — no LLM required.
+
+    For each node in the impact chain:
+      1. Look up its source_lines from the graph.
+      2. Find lines that contain the node's old name.
+      3. Replace with the new name, applying the correct naming convention
+         (snake_case for SQL/Python, camelCase for TS/React).
+    """
+    impact = get_impact(G, node_id)
+    source_data = dict(G.nodes[node_id])
+    old_name_root = source_data.get("name", node_id.split("::")[-1])
+
+    files: list[dict] = []
+    seen: set[tuple] = set()  # (file, line) dedup
+
+    # Process source node + every downstream node
+    chain_nodes: list[dict] = [source_data] + [
+        dict(G.nodes[c["node"]["id"]]) if "id" in (c["node"] if isinstance(c["node"], dict) else {})
+        else (dict(G.nodes.get(list(c["node"].keys())[0], {})) if isinstance(c["node"], dict) else dict(c["node"]))
+        for c in impact["chain"]
+        if c.get("node")
+    ]
+
+    # Rebuild cleanly — some chain items nest node data differently
+    clean_nodes: list[dict] = [source_data]
+    for c in impact["chain"]:
+        raw = c.get("node", {})
+        nid = raw.get("id", "")
+        if nid and nid in G:
+            clean_nodes.append(dict(G.nodes[nid]))
+        elif isinstance(raw, dict):
+            clean_nodes.append(raw)
+
+    for nd in clean_nodes:
+        lang       = nd.get("language", "")
+        file_path  = nd.get("file", "")
+        line_start = nd.get("line_start", 0)
+        src_text   = (nd.get("source_lines") or "").strip()
+        node_name  = nd.get("name", old_name_root)
+
+        if not file_path or not src_text:
+            continue
+
+        tname = _target_name(new_name, lang, node_name)
+
+        # Search each source line for the node's own name (most specific match)
+        src_lines = src_text.split("\n")
+        for i, src_line in enumerate(src_lines):
+            # Match on node_name first; fall back to old_name_root
+            match_name = node_name if node_name in src_line else (old_name_root if old_name_root in src_line else None)
+            if not match_name:
+                continue
+
+            # Preserve the correct target form for this language
+            replacement = _target_name(new_name, lang, match_name)
+            new_line = src_line.replace(match_name, replacement)
+            if new_line == src_line:
+                continue
+
+            actual_line = line_start + i
+            key = (file_path, actual_line)
+            if key in seen:
+                continue
+            seen.add(key)
+
+            files.append({
+                "file":        file_path,
+                "language":    lang,
+                "line":        actual_line,
+                "old_code":    src_line.strip(),
+                "new_code":    new_line.strip(),
+                "change_type": _change_type(lang, nd.get("type", "")),
+            })
+            break  # one change per node — the most representative line
+
+    # Safe application order: SQL → Python → TS/React
+    order_langs = []
+    for lng in ["sql", "python", "typescript", "javascript", "react"]:
+        if any(f["language"] == lng for f in files):
+            order_langs.append(lng)
+
+    ORDER_LABEL = {
+        "sql":        "SQL — rename column in schema/migration file",
+        "python":     "Python — update ORM model and Pydantic serialiser",
+        "typescript": "TypeScript — update interfaces and API types",
+        "javascript": "JavaScript — update references",
+        "react":      "React — update component props and destructuring",
+    }
+    safe_order = [ORDER_LABEL[lg] for lg in order_langs if lg in ORDER_LABEL]
+
+    file_count = len(set(f["file"] for f in files))
+    lang_set   = sorted(set(f["language"] for f in files))
+    summary    = (
+        f"{len(files)} change{'s' if len(files) != 1 else ''} across "
+        f"{file_count} file{'s' if file_count != 1 else ''} "
+        f"in {', '.join(lang_set)}"
+    )
+
+    return {
+        "summary":    summary,
+        "safe_order": safe_order or ["Apply changes in database → backend → frontend order"],
+        "files":      files,
+    }
+
+
 async def generate_migration(G: nx.DiGraph, node_id: str, new_name: str) -> dict:
-    """Generate a complete cross-language migration plan for renaming a field."""
+    """
+    Generate a complete cross-language migration plan for renaming a field.
+
+    Strategy:
+      1. Always build a deterministic plan from graph data (instant, reliable).
+      2. Attempt an LLM pass to enrich/correct the plan.
+      3. If LLM fails or returns fewer results than the deterministic plan, keep deterministic.
+    """
     import json
     import os
     from openai import AsyncOpenAI
     from dotenv import load_dotenv
     load_dotenv()
 
-    llm_client = AsyncOpenAI(
-        base_url=os.getenv("FEATHERLESS_BASE_URL", "https://api.featherless.ai/v1"),
-        api_key=os.getenv("FEATHERLESS_API_KEY", ""),
-        timeout=60.0,
-        max_retries=0,
-    )
-    model = os.getenv("FEATHERLESS_MODEL", "meta-llama/llama-3.1-8b-instruct")
+    if node_id not in G:
+        return {"summary": f"Node '{node_id}' not found in graph.", "files": [], "safe_order": []}
 
-    impact = get_impact(G, node_id)
-    source_node = impact["source"]
+    # ── Step 1: deterministic plan (always succeeds) ──────────────────────────
+    det_plan = _build_migration_deterministic(G, node_id, new_name)
 
-    prompt = f"""Generate a complete, safe migration plan for renaming a field in a polyglot codebase.
+    if not det_plan["files"]:
+        # Node has no source_lines stored — nothing to diff
+        return {
+            "summary": "No source code found for this node. Re-run analysis with a repo that includes source files.",
+            "files":   [],
+            "safe_order": [],
+        }
 
-Field being renamed: '{source_node.get('name', node_id)}' to '{new_name}'
-Source: {source_node.get('file', '?')} line {source_node.get('line_start', '?')}
-Language: {source_node.get('language', '?')}
-
-All affected nodes across all language layers:
-{json.dumps(impact['chain'], indent=2)}
-
-Account for ALL transformations:
-- If SQL: use ALTER TABLE RENAME COLUMN
-- If Python ORM: update Column() argument or attribute name
-- If Pydantic: update field name (keep camelCase alias if present)
-- If TypeScript interface: update field name preserving camelCase
-- If React: update prop access and destructuring
-
-Return ONLY this JSON (no markdown):
-{{
-  "summary": "X changes across Y files in Z languages",
-  "safe_order": ["apply SQL first, then Python ORM, then schema, then TypeScript, then React"],
-  "files": [
-    {{
-      "file": "filename",
-      "language": "sql|python|typescript|react",
-      "line": 12,
-      "old_code": "exact current line",
-      "new_code": "exact replacement line",
-      "change_type": "rename|update_reference|update_serializer|update_interface"
-    }}
-  ]
-}}"""
-
+    # ── Step 2: LLM enrichment (best-effort, small prompt) ───────────────────
     try:
-        response = await llm_client.chat.completions.create(
-            model=model,
-            max_tokens=1200,
-            messages=[{"role": "user", "content": prompt}]
+        llm_client = AsyncOpenAI(
+            base_url=os.getenv("FEATHERLESS_BASE_URL", "https://openrouter.ai/api/v1"),
+            api_key=os.getenv("FEATHERLESS_API_KEY", ""),
+            timeout=25.0,
+            max_retries=0,
         )
-        text = response.choices[0].message.content.strip()
-        if "```" in text:
-            parts = text.split("```")
-            text = parts[1] if len(parts) > 1 else text
-            if text.startswith("json"):
-                text = text[4:]
-        return json.loads(text.strip())
-    except json.JSONDecodeError:
-        return {"summary": "Parse error — LLM returned invalid JSON", "files": [], "safe_order": []}
-    except Exception as e:
-        return {"summary": f"Migration unavailable: {e}", "files": [], "safe_order": []}
+        model = os.getenv("FEATHERLESS_MODEL", "meta-llama/llama-3.1-8b-instruct")
+
+        source_node = dict(G.nodes[node_id])
+        old_name    = source_node.get("name", node_id.split("::")[-1])
+
+        # Small, focused prompt — only ask LLM to verify/fix the diff lines
+        compact_files = [
+            {"file": f["file"], "language": f["language"], "line": f["line"],
+             "old_code": f["old_code"], "new_code": f["new_code"]}
+            for f in det_plan["files"]
+        ]
+        prompt = (
+            f"Review and correct this cross-language rename plan.\n"
+            f"Renaming: '{old_name}' -> '{new_name}'\n\n"
+            f"Current plan (JSON):\n{json.dumps(compact_files, indent=2)}\n\n"
+            f"Rules:\n"
+            f"- SQL/Python use snake_case; TypeScript/React use camelCase\n"
+            f"- Only fix incorrect new_code values\n"
+            f"- Keep the same file/line/language/change_type fields\n\n"
+            f"Return ONLY valid JSON array (same structure, no markdown, no explanation)."
+        )
+
+        resp = await llm_client.chat.completions.create(
+            model=model, max_tokens=800,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = resp.choices[0].message.content.strip()
+
+        # Extract JSON array from anywhere in the response
+        start = raw.find("[")
+        end   = raw.rfind("]") + 1
+        if start >= 0 and end > start:
+            llm_files = json.loads(raw[start:end])
+            # Only use LLM result if it has at least as many entries
+            if isinstance(llm_files, list) and len(llm_files) >= len(det_plan["files"]):
+                # Merge: keep deterministic change_type, use LLM new_code if different
+                for llm_f, det_f in zip(llm_files, det_plan["files"]):
+                    llm_f.setdefault("change_type", det_f["change_type"])
+                det_plan["files"] = llm_files
+
+    except Exception:
+        pass  # LLM failed — keep the deterministic plan unchanged
+
+    return det_plan
