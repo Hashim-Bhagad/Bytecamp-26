@@ -31,24 +31,29 @@ const NODE_W  = 200;
 const NODE_H  = 96;
 
 // Target x-center for each zone after dagre layout
-const ZONE_TARGET_X: Record<string, number> = { database: 160, backend: 620, frontend: 1100 };
-const ZONE_BAND_W   = 340;   // max spread within a zone column
-const ZONE_BG_PAD   = 28;
+const ZONE_TARGET_X: Record<string, number> = { database: 220, backend: 860, frontend: 1520 };
+const ZONE_BAND_W   = 480;   // max spread within a zone column
+const ZONE_BG_PAD   = 36;
 
 const CHAIN_EDGE_TYPES = new Set([
-  'ORM_MAP', 'CONVENTION_MAP', 'SCHEMA_MAP', 'RENDERS',
-  'SERIALIZES_TO', 'FLOWS_TO', 'MAPS_TO',
+  // current backend names
+  'MAPS_TO', 'SERIALIZES_TO', 'RENDERS', 'FLOWS_TO', 'EXPOSES_AS', 'IMPORTS',
+  // legacy names (older graphs)
+  'ORM_MAP', 'CONVENTION_MAP', 'SCHEMA_MAP',
 ]);
 
 const EDGE_COLOR: Record<string, string> = {
-  ORM_MAP:        '#00e5b8',
+  // current
   MAPS_TO:        '#00e5b8',
-  CONVENTION_MAP: '#38bdf8',
   SERIALIZES_TO:  '#38bdf8',
-  SCHEMA_MAP:     '#a78bfa',
   RENDERS:        '#34d399',
-  EXPOSES_AS:     '#818cf8',
   FLOWS_TO:       '#7c3aed',
+  EXPOSES_AS:     '#818cf8',
+  IMPORTS:        '#64748b',
+  // legacy compat
+  ORM_MAP:        '#00e5b8',
+  CONVENTION_MAP: '#38bdf8',
+  SCHEMA_MAP:     '#a78bfa',
 };
 
 const TYPE_LABEL: Record<string, string> = {
@@ -82,7 +87,7 @@ function buildLayout(graphNodes: any[], graphEdges: any[]) {
   // Run dagre to get organic topology-based positions
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: 'LR', ranksep: 300, nodesep: 22, marginx: 40, marginy: 40 });
+  g.setGraph({ rankdir: 'LR', ranksep: 420, nodesep: 60, marginx: 60, marginy: 60 });
 
   nodes.forEach(n => g.setNode(n.id, { width: NODE_W, height: NODE_H }));
 
@@ -236,15 +241,15 @@ function computeTrail(nodeId: string, nodes: any[], edges: any[]): Trail {
 const ZoneBg = ({ data }: any) => (
   <div style={{
     width: data.width, height: data.height,
-    background: `${data.color}06`,
-    border: `1px solid ${data.color}1a`,
-    borderRadius: 14, pointerEvents: 'none',
-    boxShadow: `inset 0 0 60px ${data.color}04`,
+    background: `${data.color}09`,
+    border: `1.5px solid ${data.color}30`,
+    borderRadius: 18, pointerEvents: 'none',
+    boxShadow: `inset 0 0 80px ${data.color}07, 0 0 0 1px ${data.color}10`,
   }}>
     <div style={{
-      position: 'absolute', top: 10, left: 0, right: 0, textAlign: 'center',
-      fontFamily: 'Syne, sans-serif', fontSize: 9, fontWeight: 700,
-      letterSpacing: '0.18em', color: `${data.color}55`,
+      position: 'absolute', top: 12, left: 0, right: 0, textAlign: 'center',
+      fontFamily: 'Syne, sans-serif', fontSize: 10, fontWeight: 800,
+      letterSpacing: '0.22em', color: `${data.color}70`,
     }}>
       {data.label}
     </div>
@@ -614,10 +619,11 @@ const GraphCanvas: React.FC = () => {
               EDGE TYPES
             </div>
             {([
-              { color: '#00e5b8', label: 'ORM_MAP',        dash: false },
-              { color: '#38bdf8', label: 'CONVENTION_MAP', dash: true  },
-              { color: '#a78bfa', label: 'SCHEMA_MAP',     dash: true  },
+              { color: '#00e5b8', label: 'MAPS_TO',        dash: false },
+              { color: '#38bdf8', label: 'SERIALIZES_TO',  dash: false },
               { color: '#34d399', label: 'RENDERS',        dash: false },
+              { color: '#7c3aed', label: 'FLOWS_TO',       dash: false },
+              { color: '#818cf8', label: 'EXPOSES_AS',     dash: false },
               { color: '#ff5733', label: 'CRITICAL BREAK', dash: false },
               { color: '#7a9ab8', label: 'LLM Inferred',   dash: true  },
             ] as const).map(e => (

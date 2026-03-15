@@ -5,7 +5,7 @@ import { useAuth } from '@/context/AuthContext';
 import apiClient from '@/api/client';
 import axios from 'axios';
 
-type Mode = 'login' | 'register' | 'setup';
+type Mode = 'login' | 'register';
 
 const LoginPage = () => {
   const { login } = useAuth();
@@ -14,7 +14,6 @@ const LoginPage = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
-  const [repoPath, setRepoPath] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -39,13 +38,12 @@ const LoginPage = () => {
     try {
       if (mode === 'login') {
         await login(username.trim(), password);
-        navigate('/app');
+        navigate('/setup');
       } else {
         const res = await apiClient.register(username.trim(), password);
         localStorage.setItem('depgraph_token', res.token);
         localStorage.setItem('depgraph_username', res.username);
-        // Move to repo setup step
-        setMode('setup');
+        navigate('/setup');
       }
     } catch (err: any) {
       const detail = axios.isAxiosError(err) ? err.response?.data?.detail : null;
@@ -53,17 +51,6 @@ const LoginPage = () => {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleStartAnalysis = () => {
-    if (repoPath.trim()) {
-      localStorage.setItem('depgraph_pending_repo', repoPath.trim());
-    }
-    window.location.href = '/app';
-  };
-
-  const handleSkip = () => {
-    window.location.href = '/app';
   };
 
   const inputStyle = {
@@ -200,82 +187,6 @@ const LoginPage = () => {
                   Default: admin / depgraph123
                 </p>
               )}
-            </motion.div>
-          )}
-
-          {/* ── Setup card (post-register) ── */}
-          {mode === 'setup' && (
-            <motion.div
-              key="setup"
-              initial={{ opacity: 0, x: 30 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.25 }}
-              className="rounded-xl p-6 border"
-              style={{ background: 'var(--surface-hex)', borderColor: 'var(--border-2-hex)' }}
-            >
-              {/* Success badge */}
-              <div className="flex items-center gap-2 mb-5 p-3 rounded-lg"
-                style={{ background: 'rgba(0,229,184,0.06)', border: '1px solid rgba(0,229,184,0.2)' }}>
-                <span style={{ color: 'var(--teal-hex)', fontSize: 16 }}>✓</span>
-                <div>
-                  <div className="font-syne font-semibold text-xs" style={{ color: 'var(--teal-hex)' }}>
-                    Account created!
-                  </div>
-                  <div className="font-mono text-[10px]" style={{ color: 'var(--text-4-hex)' }}>
-                    Welcome, {username}
-                  </div>
-                </div>
-              </div>
-
-              <h3 className="font-syne font-semibold text-sm mb-1" style={{ color: 'var(--text-1-hex)' }}>
-                Add your repository
-              </h3>
-              <p className="font-mono text-[11px] mb-4" style={{ color: 'var(--text-4-hex)' }}>
-                Paste a local path or GitHub URL to analyze immediately.
-              </p>
-
-              <div className="space-y-3">
-                <div>
-                  <label className="block font-mono text-xs mb-1.5" style={{ color: 'var(--text-3-hex)' }}>
-                    Repository path or GitHub URL
-                  </label>
-                  <input
-                    type="text"
-                    value={repoPath}
-                    onChange={e => setRepoPath(e.target.value)}
-                    autoFocus
-                    placeholder="C:/Projects/my-app  or  https://github.com/..."
-                    className="w-full px-3 py-2 rounded-lg border outline-none font-mono text-xs transition-all"
-                    style={inputStyle}
-                    onFocus={e => (e.target.style.borderColor = 'var(--teal-hex)')}
-                    onBlur={e => (e.target.style.borderColor = 'var(--border-1-hex)')}
-                    onKeyDown={e => { if (e.key === 'Enter' && repoPath.trim()) handleStartAnalysis(); }}
-                  />
-                </div>
-
-                <motion.button
-                  onClick={handleStartAnalysis}
-                  disabled={!repoPath.trim()}
-                  whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}
-                  className="w-full py-2.5 rounded-lg font-syne font-semibold text-sm transition-all"
-                  style={{
-                    background: repoPath.trim() ? 'var(--teal-hex)' : 'var(--border-1-hex)',
-                    color: 'var(--void-hex)',
-                    cursor: repoPath.trim() ? 'pointer' : 'not-allowed',
-                  }}
-                >
-                  Start Analysis →
-                </motion.button>
-
-                <button
-                  onClick={handleSkip}
-                  className="w-full py-2 font-mono text-xs cursor-pointer transition-all"
-                  style={{ color: 'var(--text-4-hex)', background: 'transparent', border: 'none' }}
-                >
-                  Skip for now — go to dashboard
-                </button>
-              </div>
             </motion.div>
           )}
 

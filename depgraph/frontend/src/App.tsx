@@ -3,6 +3,7 @@ import { useAuth, AuthProvider } from "./context/AuthContext";
 import { AppProvider } from "./context/AppContext";
 import LandingPage from "./pages/LandingPage";
 import LoginPage from "./pages/LoginPage";
+import SetupPage from "./pages/SetupPage";
 import MainApp from "./pages/MainApp";
 import AnalyzingPage from "./pages/AnalyzingPage";
 import NotFound from "./pages/NotFound";
@@ -27,6 +28,7 @@ const App = () => (
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/setup" element={<ProtectedRoute><SetupPage /></ProtectedRoute>} />
           <Route path="/app" element={<ProtectedRoute><MainApp /></ProtectedRoute>} />
           <Route path="/analyzing" element={<ProtectedRoute><AnalyzingPage /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />

@@ -315,6 +315,11 @@ export const apiClient = {
     return res.data;
   },
 
+  async getUserStatus(): Promise<{ has_graph: boolean; repo_path: string; node_count: number; edge_count: number; repo_name: string }> {
+    const res = await api.get('/user/status');
+    return res.data;
+  },
+
   async getRepoPath(): Promise<{ repo_path: string; exists: boolean }> {
     const res = await api.get('/repo-path');
     return res.data;
