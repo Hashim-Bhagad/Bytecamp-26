@@ -184,7 +184,7 @@ const LoginPage = () => {
 
               {mode === 'login' && (
                 <p className="font-mono text-[10px] mt-4 text-center" style={{ color: 'var(--text-4-hex)' }}>
-                  Default: admin / depgraph123
+                  New here? Switch to <span style={{ color: 'var(--teal-hex)', cursor: 'pointer' }} onClick={() => switchMode('register')}>Create account</span>
                 </p>
               )}
             </motion.div>
