@@ -1,0 +1,12 @@
+{
+  "users": {
+    "admin": {
+      "repo_path": "C:\\Users\\Mantra\\Desktop\\PolyGlot\\Bytecamp-26\\depgraph\\sample_repo",
+      "graph_path": "C:\\Users\\Mantra\\Desktop\\PolyGlot\\Bytecamp-26\\depgraph\\depgraph_admin.json"
+    },
+    "mantra": {
+      "repo_path": "C:\\Users\\Mantra\\Desktop\\PolyGlot\\Bytecamp-26\\depgraph\\clones\\Wellbeing-app_7db573a8",
+      "graph_path": "C:\\Users\\Mantra\\Desktop\\PolyGlot\\Bytecamp-26\\depgraph\\depgraph_mantra.json"
+    }
+  }
+}

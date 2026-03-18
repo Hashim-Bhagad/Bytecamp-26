@@ -8,6 +8,21 @@ import React, {
   useState,
 } from 'react';
 import ForceGraph3D from 'react-force-graph-3d';
+import { forceX } from 'd3-force';
+
+// d3-force doesn't export forceZ; replicate it as a simple Z-attractor
+function forceZ(targetZ: number) {
+  let strength = 0.1;
+  let nodes: any[] = [];
+  function force() {
+    for (const node of nodes) {
+      node.vz = (node.vz || 0) + (targetZ - (node.z || 0)) * strength;
+    }
+  }
+  force.initialize = (n: any[]) => { nodes = n; };
+  force.strength = (s: number) => { strength = s; return force; };
+  return force;
+}
 import SpriteText from 'three-spritetext';
 import * as THREE from 'three';
 import { useApp } from '@/context/AppContext';
@@ -68,14 +83,27 @@ const GraphCanvas: React.FC = () => {
     return () => obs.disconnect();
   }, []);
 
-  // Apply section-grouping forces after graph mounts
+  // Apply section-grouping forces after graph mounts using real d3-force
   useEffect(() => {
     if (!fgRef.current || !graphData?.nodes.length) return;
     const fg = fgRef.current;
-    
-    // Disable custom forces for debugging
-    fg.d3Force('section-x', null);
-    fg.d3Force('z-flatten', null);
+
+    // Push DATABASE / BACKEND / FRONTEND into left / center / right bands
+    fg.d3Force(
+      'sectionX',
+      forceX((node: any) => {
+        const layer = node.layer || getLayer(node.language || '');
+        if (layer === 'database') return -350;
+        if (layer === 'frontend') return 350;
+        return 0; // backend
+      }).strength(0.12),
+    );
+
+    // Keep everything near the Z=0 plane (2.5D effect)
+    fg.d3Force(
+      'flattenZ',
+      forceZ(0).strength(0.25),
+    );
 
     fg.d3ReheatSimulation();
   }, [graphData]);
@@ -94,10 +122,6 @@ const GraphCanvas: React.FC = () => {
   // Convert edges → links (the library uses "links" not "edges")
   const fg3dData = useMemo(() => {
     if (!graphData) return { nodes: [], links: [] };
-    
-    // Create a Set of valid node IDs to prevent d3-force crash on missing nodes
-    const nodeIds = new Set(graphData.nodes.map((n: any) => n.id));
-    
     const links = graphData.edges
       .map(edge => ({
         source:        edge.source,
@@ -109,9 +133,8 @@ const GraphCanvas: React.FC = () => {
         inferredBy:    (edge.data as any)?.inferred_by || 'ast',
         transformation:(edge.data as any)?.transformation || '',
       }))
-      .filter(l => l.source && l.target && nodeIds.has(l.source as string) && nodeIds.has(l.target as string));
-      
-    return { nodes: graphData.nodes.map(n => ({ ...n })), links };
+      .filter(l => l.source && l.target);
+    return { nodes: graphData.nodes, links };
   }, [graphData]);
 
   // ── Custom Three.js node object ────────────────────────────────────────────
@@ -155,26 +178,22 @@ const GraphCanvas: React.FC = () => {
     }
 
     // Primary label sprite
-    // Primary label sprite
-    try {
-      const labelStr = String(node.name || (typeof node.id === 'string' ? node.id.split('::').pop() : '?') || '?');
-      const sprite = new SpriteText(labelStr);
-      sprite.color      = isSelected ? '#00e5b8' : (isDimmed ? '#1e3048' : '#e8f0fa');
-      sprite.textHeight = isSelected ? 9 : 5;
-      sprite.position.y = radius + 11;
-      group.add(sprite);
+    const label = (node.name as string) || (node.id as string)?.split('::').pop() || '';
+    const sprite = new SpriteText(label);
+    sprite.color      = isSelected ? '#00e5b8' : (isDimmed ? '#1e3048' : '#e8f0fa');
+    sprite.textHeight = isSelected ? 9 : 5;
+    sprite.position.y = radius + 11;
+    group.add(sprite);
 
-      // Sub-label on selected / highlighted
-      if (isSelected || isHit) {
-        const fileStr = String(node.file || '');
-        const sub = new SpriteText(`[${node.type || '?'}] ${fileStr.split('/').pop()}`);
-        sub.color      = '#8da4bd';
-        sub.textHeight = 3.5;
-        sub.position.y = radius + 20;
-        group.add(sub);
-      }
-    } catch (err) {
-      console.warn('SpriteText failed to render for node:', node.id, err);
+    // Sub-label on selected / highlighted
+    if (isSelected || isHit) {
+      const sub = new SpriteText(
+        `[${node.type || '?'}] ${(node.file as string || '').split('/').pop()}`,
+      );
+      sub.color      = '#8da4bd';
+      sub.textHeight = 3.5;
+      sub.position.y = radius + 20;
+      group.add(sub);
     }
 
     return group;
@@ -184,18 +203,27 @@ const GraphCanvas: React.FC = () => {
   const linkColor = useCallback((link: any) => {
     const srcId = typeof link.source === 'object' ? link.source.id : link.source;
     const tgtId = typeof link.target === 'object' ? link.target.id : link.target;
-    const connected = !selectedNode || srcId === selectedNode || tgtId === selectedNode;
-    if (!connected) return 'rgba(20,35,55,0.12)';
+
+    // Always show a clear baseline graph, then slightly emphasize the
+    // edges touching the selected node instead of hiding the rest.
+    const isConnectedToSelection =
+      !!selectedNode && (srcId === selectedNode || tgtId === selectedNode);
+
     if (link.breakRisk === 'high') return '#ff5733';
-    return EDGE_COLORS[link.edgeType as string] || '#2a4060';
+
+    const base = EDGE_COLORS[link.edgeType as string] || '#2a4060';
+    if (!selectedNode) return base;
+
+    // De-emphasize non-neighbors, but keep them visible
+    return isConnectedToSelection ? base : 'rgba(42,64,96,0.45)';
   }, [selectedNode]);
 
   const linkWidth = useCallback((link: any) => {
     const srcId = typeof link.source === 'object' ? link.source.id : link.source;
     const tgtId = typeof link.target === 'object' ? link.target.id : link.target;
     const connected = !selectedNode || srcId === selectedNode || tgtId === selectedNode;
-    if (link.breakRisk === 'high') return 1.8;
-    return connected ? 0.8 : 0.15;
+    if (link.breakRisk === 'high') return 3.0;
+    return connected ? 1.6 : 0.5;
   }, [selectedNode]);
 
   const linkDirectionalParticles = useCallback(
@@ -297,11 +325,12 @@ const GraphCanvas: React.FC = () => {
         width={dimensions.width}
         height={dimensions.height}
         backgroundColor="#04070d"
+        nodeRelSize={6}
         nodeThreeObject={nodeThreeObject}
         nodeThreeObjectExtend={false}
         linkColor={linkColor}
         linkWidth={linkWidth}
-        linkOpacity={0.65}
+        linkOpacity={1}
         linkDirectionalArrowLength={3.5}
         linkDirectionalArrowRelPos={1}
         linkDirectionalArrowColor={linkColor}
@@ -309,6 +338,17 @@ const GraphCanvas: React.FC = () => {
         linkDirectionalParticleColor={() => '#ff5733'}
         linkDirectionalParticleSpeed={0.005}
         linkDirectionalParticleWidth={1.5}
+        onEngineStop={() => {
+          // Auto-fit the view once the layout has stabilized so the
+          // full graph is visible without manual zoom/pan.
+          if (fgRef.current) {
+            try {
+              fgRef.current.zoomToFit(400, 80);
+            } catch {
+              // ignore view errors
+            }
+          }
+        }}
         onNodeClick={(node: any) => selectNode(node.id)}
         onBackgroundClick={() => selectNode(null)}
         d3AlphaDecay={0.025}

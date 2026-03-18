@@ -19,8 +19,9 @@ const TopBar = () => {
     startAnalysisStream(repoUrl || '.');
   };
 
-  const breakingCount = graphData?.edges.filter(e => e.break_risk > 0.5).length || 0;
-  const languageCount = new Set(graphData?.nodes.map(n => n.language)).size;
+  const breakingCount =
+    graphData?.edges.filter(e => (e.data as any)?.break_risk === 'high').length || 0;
+  const languageCount = graphData ? new Set(graphData.nodes.map(n => n.language)).size : 0;
 
   return (
     <div
@@ -37,9 +38,11 @@ const TopBar = () => {
 
       {/* Center */}
       <div className="absolute left-1/2 -translate-x-1/2">
-        {analysisComplete ? (
+        {analysisComplete && graphData ? (
           <span className="font-mono text-[12px]" style={{ color: 'var(--text-3-hex)' }}>
-            <span style={{ color: 'var(--teal-hex)' }}>✓</span> Analysis complete — 6 breaking changes across 4 languages
+            <span style={{ color: 'var(--teal-hex)' }}>✓</span>{' '}
+            Analysis complete — {breakingCount} breaking changes across {languageCount || 1}{' '}
+            {languageCount === 1 ? 'language' : 'languages'}
           </span>
         ) : (
           <div className="flex items-center gap-2">
